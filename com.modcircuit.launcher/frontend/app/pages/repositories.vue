@@ -6,6 +6,7 @@ import type { Repository, RepositoryStatus } from '~/stores/Repositories'
 const repoStore = useRepositoryStore()
 
 const loading = ref(true)
+const initError = ref('')
 const searchQuery = ref('')
 const drawerOpen = ref(false)
 const editingRepo = ref<Repository | null>(null)
@@ -22,8 +23,14 @@ const formData = ref({
 })
 
 onMounted(async () => {
-  await repoStore.init()
-  loading.value = false
+  try {
+    await repoStore.init()
+  } catch (e) {
+    initError.value = e instanceof Error ? e.message : String(e)
+    console.error('[repositories] init failed:', e)
+  } finally {
+    loading.value = false
+  }
 })
 
 const filteredRepositories = computed(() => {
@@ -180,6 +187,23 @@ const statusBadgeClass = (id: string) => {
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-12">
       <Icon name="lucide:loader-circle" class="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+
+    <!-- Init error -->
+    <div
+      v-else-if="initError"
+      class="flex flex-col items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 py-10 text-center"
+    >
+      <Icon name="lucide:triangle-alert" class="h-10 w-10 text-destructive" />
+      <p class="mt-3 font-medium text-destructive">Failed to load repositories</p>
+      <p class="mt-1 max-w-sm text-xs text-muted-foreground">{{ initError }}</p>
+      <button
+        class="mt-4 flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        @click="loading = true; initError = ''; repoStore.init().then(() => loading = false).catch(e => { initError = String(e); loading = false })"
+      >
+        <Icon name="lucide:refresh-cw" class="h-4 w-4" />
+        Retry
+      </button>
     </div>
 
     <!-- Repository List -->

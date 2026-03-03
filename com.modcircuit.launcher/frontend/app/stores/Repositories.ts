@@ -45,8 +45,8 @@ export const useRepositoryStore = defineStore('repositories', {
         async init() {
             if (this.initialized) return
 
-            this.bindStatusEvents()
             await this.loadRepositories()
+            this.bindStatusEvents()
             // Ping asynchronously — don't block page load
             PingAll().catch(() => {})
 
@@ -58,7 +58,8 @@ export const useRepositoryStore = defineStore('repositories', {
         // -----------------------------------------------------------------------
 
         async loadRepositories() {
-            this.repositories = (await ListRepositories()) ?? []
+            const result = await ListRepositories()
+            this.repositories = Array.isArray(result) ? result : []
         },
 
         // -----------------------------------------------------------------------
@@ -126,9 +127,23 @@ export const useRepositoryStore = defineStore('repositories', {
         // -----------------------------------------------------------------------
 
         bindStatusEvents() {
-            EventsOn('repository:status', (payload: RepositoryStatus) => {
-                this.status[payload.id] = payload
-            })
+            try {
+                EventsOn('repository:status', (payload: RepositoryStatus) => {
+                    this.status[payload.id] = payload
+                })
+            } catch {
+                // window.runtime may not be available yet (Wails dev mode race).
+                // Retry once after a short delay.
+                setTimeout(() => {
+                    try {
+                        EventsOn('repository:status', (payload: RepositoryStatus) => {
+                            this.status[payload.id] = payload
+                        })
+                    } catch (e) {
+                        console.warn('[repositories] EventsOn failed:', e)
+                    }
+                }, 500)
+            }
         },
     },
 })
