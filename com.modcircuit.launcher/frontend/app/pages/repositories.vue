@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRepositoryStore } from '~/stores/Repositories'
 import type { Repository, RepositoryStatus } from '~/stores/Repositories'
 
@@ -13,6 +13,23 @@ const editingRepo = ref<Repository | null>(null)
 const saving = ref(false)
 const saveError = ref('')
 const pinging = ref<Record<string, boolean>>({})
+const pingingAll = ref(false)
+
+// Clear a repo's spinner as soon as its status event arrives
+watch(
+  () => repoStore.status,
+  (status) => {
+    for (const id of Object.keys(status)) {
+      if (pinging.value[id]) {
+        pinging.value[id] = false
+      }
+    }
+    if (pingingAll.value && Object.keys(status).length > 0) {
+      pingingAll.value = false
+    }
+  },
+  { deep: true },
+)
 
 const formData = ref({
   name: '',
@@ -110,16 +127,25 @@ const toggleRepository = async (id: string) => {
 
 const pingRepository = async (id: string) => {
   pinging.value[id] = true
-  try {
-    await repoStore.pingRepository(id)
-  } finally {
-    // Status update comes via event; clear spinner after short delay
-    setTimeout(() => { pinging.value[id] = false }, 3500)
-  }
+  // Spinner clears via the status watcher when the event arrives.
+  // Fallback: clear after 5s in case the repo is unreachable and no event fires.
+  setTimeout(() => { pinging.value[id] = false }, 5000)
+  await repoStore.pingRepository(id).catch(() => {})
 }
 
-const pingAll = () => {
-  repoStore.pingAll().catch(() => {})
+const pingAll = async () => {
+  pingingAll.value = true
+  for (const repo of repoStore.repositories) {
+    pinging.value[repo.id] = true
+  }
+  // Fallback clear in case some repos never return a status event
+  setTimeout(() => {
+    pingingAll.value = false
+    for (const id of Object.keys(pinging.value)) {
+      pinging.value[id] = false
+    }
+  }, 5000)
+  await repoStore.pingAll().catch(() => {})
 }
 
 // Access status directly from store state for proper reactivity
@@ -154,11 +180,12 @@ const statusBadgeClass = (id: string) => {
       </div>
       <div class="flex gap-2">
         <button
-          class="flex items-center gap-2 rounded bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          class="flex items-center gap-2 rounded bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
+          :disabled="pingingAll"
           @click="pingAll"
         >
-          <Icon name="lucide:refresh-cw" class="h-4 w-4" />
-          Ping All
+          <Icon name="lucide:refresh-cw" class="h-4 w-4" :class="{ 'animate-spin': pingingAll }" />
+          {{ pingingAll ? 'Pinging...' : 'Ping All' }}
         </button>
         <button
           class="flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
